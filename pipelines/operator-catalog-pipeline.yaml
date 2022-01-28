@@ -1,0 +1,71 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: ibm-operator-catalog
+  annotations:
+    app.openshift.io/runtime: operator
+spec:
+  params:
+    - name: git-url
+      description: The url for the git repository
+    - name: git-revision
+      description: The git revision (branch, tag, or sha) that should be built
+      default: master
+    - name: scan-image
+      description: Enable the pipeline to scan the image for vulnerabilities
+      default: "false"
+  tasks:
+    - name: setup
+      taskRef:
+        name: ibm-setup
+      params:
+        - name: git-url
+          value: $(params.git-url)
+        - name: git-revision
+          value: $(params.git-revision)
+        - name: scan-image
+          value: $(params.scan-image)
+    - name: tag-release
+      taskRef:
+        name: ibm-tag-release
+      runAfter:
+        - setup
+      params:
+        - name: git-url
+          value: "$(tasks.setup.results.git-url)"
+        - name: git-revision
+          value: "$(tasks.setup.results.git-revision)"
+        - name: source-dir
+          value: "$(tasks.setup.results.source-dir)"
+        - name: js-image
+          value: "$(tasks.setup.results.js-image)"
+    - name: build
+      taskRef:
+        name: ibm-operator-catalog-build
+      runAfter:
+        - tag-release
+      params:
+        - name: git-url
+          value: "$(tasks.setup.results.git-url)"
+        - name: git-revision
+          value: "$(tasks.setup.results.git-revision)"
+        - name: source-dir
+          value: "$(tasks.setup.results.source-dir)"
+        - name: image-url
+          value: "$(tasks.setup.results.image-release):$(tasks.tag-release.results.tag)"
+    - name: gitops
+      taskRef:
+        name: ibm-operator-catalog-gitops
+      runAfter:
+        - build
+      params:
+        - name: git-url
+          value: "$(tasks.setup.results.git-url)"
+        - name: git-revision
+          value: "$(tasks.setup.results.git-revision)"
+        - name: app-name
+          value: "$(tasks.setup.results.app-name)"
+        - name: image-url
+          value: "$(tasks.setup.results.image-release):$(tasks.tag-release.results.tag)"
+        - name: tools-image
+          value: "$(tasks.setup.results.tools-image)"
